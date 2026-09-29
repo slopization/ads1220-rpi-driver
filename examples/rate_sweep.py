@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Sweep all data rates and verify the measured DRDY rate at each.
 
-Rate changes are plain register writes -- no reset between rates
-(a config write restarts the conversion). SCLK is lowered for turbo.
+set_config() resets the part before every rate change (the part does
+not reliably accept consecutive config writes). SCLK is lowered for
+turbo.
 """
 import time
 

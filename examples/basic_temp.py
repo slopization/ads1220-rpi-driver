@@ -11,5 +11,8 @@ with ADS1220() as adc:
     adc.set_config(20, "normal", ts=True)         # 20 SPS temperature
     time.sleep(1.0)
     for i in range(5):
-        t = adc.read_temp()
+        # sync each read to the DRDY falling edge; a blind RDATA can
+        # land mid-conversion and read 0xFF FF FF FF
+        raw = adc.single_shot(timeout_s=0.1)
+        t = adc.decode_temp(raw)
         print(f"sample {i}: {t:.2f} C")

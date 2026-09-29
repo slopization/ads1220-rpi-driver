@@ -12,8 +12,14 @@ Verified behaviours baked into this driver (do not "simplify" away):
   * SPI mode 1 ONLY (CPOL=0, CPHA=1), SCLK <= 500 kHz in normal mode,
     <= 300 kHz in turbo mode (internal oscillator requirement).
   * A config-register WRITE restarts the conversion (datasheet 8.4.2.2),
-    so rate changes need no reset. A START/SYNC (0x08) is sent after
-    config so single-shot conversions are ready immediately.
+    and a START/SYNC (0x08) is sent after config so single-shot
+    conversions are ready immediately.
+  * CONSECUTIVE config writes are not reliably accepted by the part:
+    a second WREG can be dropped, leaving the ADC stuck at the last
+    accepted rate (observed on a real part, both with and without the
+    trailing START/SYNC). set_config() therefore resets the part before
+    every configuration; one RESET per change is safe -- only repeated
+    POWERDOWN+RESET storms desync the part.
   * Reads at high rate use the single-shot sequence START -> wait for
     DRDY falling edge -> RDATA, giving a constant SCLK phase and stable
     24-bit framing. Blind polling aliases above a few hundred SPS.
@@ -169,9 +175,10 @@ class ADS1220:
         desync the part (only a full power cycle recovers it). Default
         single RESET; pass double=True for a full clean start.
 
-        For routine (re)initialisation prefer ``reconfigure()`` /
-        ``set_config()``, which restart the conversion with a plain
-        register write and do NOT send RESET at all.
+        ``set_config()`` performs its own single RESET before each
+        configuration (required: the part drops consecutive config
+        writes); ``reconfigure()`` is the no-RESET option when the
+        current configuration is still valid.
         """
         self._xfer(bytes([_CMD_PD]))
         time.sleep(0.5)
@@ -255,8 +262,13 @@ class ADS1220:
         bcs: bool = False,
         pga_bypass: bool = False,
     ) -> int:
-        """Configure the ADC. A register write restarts the conversion,
-        so NO reset is needed when changing rate.
+        """Configure the ADC.
+
+        A short RESET precedes the register writes: the part does not
+        reliably accept consecutive config writes (a dropped WREG leaves
+        the ADC stuck at the previous rate), so every (re)configuration
+        resets it first. One RESET per change is safe -- only repeated
+        POWERDOWN+RESET storms desync the part.
 
         :param sps: DR index (int 0..6) or a nominal SPS value.
         :param mode: 'normal' | 'duty' | 'turbo'.
@@ -295,6 +307,10 @@ class ADS1220:
 
         reg1 = self.reg1_value(sps, mode, cm=1 if continuous else 0, ts=ts, bcs=bcs)
         reg0 = ((mux & 0x0F) << 4) | (GAINS.index(gain) << 1) | int(pga_bypass)
+        # Reset before the writes: the part does not reliably accept
+        # consecutive config writes (it can stick at the previous rate).
+        # One reset per change is safe; see the module docstring.
+        self.reset()
         self._wr(0, reg0)
         self._wr(1, reg1)
         self._cmd(_CMD_START)  # start/restart conversion
@@ -304,7 +320,10 @@ class ADS1220:
         return reg1
 
     def set_sps(self, sps) -> None:
-        """Change the rate, keeping mux/gain/ts/pga_bypass. Safe (no reset).
+        """Change the rate, keeping mux/gain/ts/pga_bypass.
+
+        Goes through set_config(), which resets the part first --
+        required because the part drops consecutive config writes.
 
         The mode is auto-selected: if ``sps`` is a SPS value that exists in
         more than one mode's table, the current mode is kept when it has a
@@ -457,7 +476,9 @@ class ADS1220:
                 "(a stuck-low DRDY means a desynced part; power-cycle it)"
             )
         ms = [s / 1e6 for s in stamps]
-        gaps = [b - a for a, b in zip(ms, ms[1:]) if 0.0 < b - a < 1.0]
+        # skip the first edge-to-edge gap (it can carry the window's conversion
+        # start latency) and any zero/negative timestamp artifacts
+        gaps = [b - a for a, b in zip(ms[1:], ms[2:]) if b - a > 0]
         if not gaps:
             raise ADS1220Error("no valid DRDY gaps captured")
         return 1000.0 / (sum(gaps) / len(gaps))
@@ -546,8 +567,9 @@ class ADS1220:
         a desynced part can show a stuck/flaky DRDY even while data reads
         fine, so it is reported but not fatal.
 
-        :param do_reset: send a RESET command first (True for a clean
-            startup). Default False to avoid reset storms.
+        :param do_reset: send an extra RESET before configuration
+            (True for a clean startup). Note set_config() performs its
+            one required reset either way.
         """
         result: dict = {}
         if do_reset:

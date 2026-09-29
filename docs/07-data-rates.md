@@ -47,11 +47,13 @@ Measured on this hardware (internal oscillator): 20 SPS → **42.04 ms**,
 ## Rate-change procedure
 
 ```python
-adc.set_config(660, "turbo")     # one register write — done
+adc.set_config(660, "turbo")     # done: set_config() resets, then writes
 ```
 
 - A WREG of REG1 **restarts the conversion** (datasheet §8.4.2.2); the new
-  rate is active from the next DRDY cycle. No RESET, no powerdown.
+  rate is active from the next DRDY cycle. The driver still sends a RESET
+  before each write: the part does not reliably accept consecutive config
+  writes (a dropped WREG leaves the ADC stuck at the previous rate).
 - After a mode change normal↔turbo, allow a few cycles before reading
   (the filter re-settles; a 0.5 s `sleep` is plenty for ≤1 kSPS).
 - SCLK must be lowered to ≤ 300 kHz **before** entering turbo

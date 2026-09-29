@@ -9,7 +9,7 @@ symptoms to causes, and documents the **desync** state and how to recover.
 |---------|--------------|-----|
 | `RDATA` = `FF FF FF FF` always | Conversion not ready **or** part desynced | Check rate vs. conversion time; if DRDY is stuck LOW → power-cycle (below) |
 | `selftest` temp = "no valid samples" | Wiring, desync, or SPI mode error | Verify wiring (MOSI/MISO roles); confirm SPI mode 1; power-cycle |
-| `ADS1220Error: no valid DRDY gaps` | DRDY not toggling cleanly (desync or DRDY line miswired) | Check GPIO 25 wiring; power-cycle the board |
+| `ADS1220Error: no valid DRDY gaps` | DRDY not toggling cleanly (desync or DRDY line miswired) | Check GPIO 25 wiring; power-cycle the board. If rates were changed without resets, the part may be stuck at the previous rate -- reconfigure through `set_config()` (it resets first) |
 | Temperature far from room temp (e.g. −240 °C, +113 °C) | Wrong framing offset (0- or 2-bit) | Use the driver's `decode_24bit` (1-bit offset, verified); do not re-derive |
 | Temperature ~12–24 °C low at 2 kSPS single-shot, correct at 20 SPS | **SCLK > 300 kHz in turbo** (internal oscillator not fully powered at START) | `ADS1220(sclk_hz=300_000)` for any turbo use |
 | Garbage / wildly varying AIN at 2 kSPS | Blind RDATA polling aliasing (random phase of 0.5 ms cycle) | Use `single_shot()` |
@@ -49,7 +49,7 @@ temperature frame still slips through** (half-desynced).
 **How to avoid it:**
 - One reset per power-on, at most.
 - Never loop `powerdown()`+`reset()` as a "revive" — it makes things worse.
-- Change rates/modes with plain register writes (`set_config`).
+- Change rates/modes through `set_config()` only -- it resets the part before each write (a raw second WREG can be dropped, leaving the ADC stuck at the previous rate).
 - Keep SCLK ≤ 300 kHz in turbo.
 
 ## A safe diagnostic sequence

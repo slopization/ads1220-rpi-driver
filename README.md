@@ -143,7 +143,7 @@ adc.set_config(sps, mode="normal", mux=0, gain=1,
 * `gain` — one of `GAINS` = 1,2,4,8,16,32,64,128.
 * `continuous` — `True` continuous, `False` single-shot.
 * `ts` — enable internal temperature sensor.
-* Rate changes need **no reset** (a register write restarts conversion).
+* Rate changes are preceded by a short reset (gotcha 5) -- the part does not reliably accept consecutive config writes.
 
 Data-rate tables (`DATA_RATES`, datasheet Table 8-12 @ 4.096 MHz clock):
 
@@ -209,8 +209,11 @@ These were established on the real part — keep them:
 5. **The part is fragile.** Avoid back-to-back POWERDOWN+RESET cycles
    (they can desync even a freshly powered part). A desynced part shows
    DRDY stuck low and `RDATA = 0xFF FF FF FF`; **only a full power cycle
-   recovers it.** This driver resets once at startup and changes rates
-   with plain register writes.
+   recovers it.** This driver resets once at startup and again before
+   every rate/mode change: consecutive config writes are not reliably
+   accepted by the part (a dropped WREG leaves the ADC stuck at the
+   previous rate). One RESET per change is safe; only repeated
+   POWERDOWN+RESET storms desync it.
 6. **Rate is nominal ± clock.** With the internal oscillator (no external
    4.096 MHz clock) rates run slightly fast — 2 kSPS measures ~2.3 kSPS.
 
@@ -221,6 +224,7 @@ These were established on the real part — keep them:
 | `RDATA = 0xFF FF FF FF` | Conversion not ready, or part desynced. Check rate vs conversion time; if DRDY is stuck low, **power-cycle the board**. |
 | `too few DRDY edges captured` | Device not converting (wrong mode/DR, or desynced). Power-cycle. |
 | Rate much lower than set | Value-poll aliasing or ring overflow. Use `drdy_rate()` (edge timestamps). |
+| Rate stuck at the previous setting after a change | Consecutive config writes dropped by the part. `set_config()` already resets first; if issuing raw WREGs, reset between rates. |
 | Garbage data at 2 kSPS | SCLK too high, or blind-poll aliasing. Lower SCLK to ≤300 kHz; use `single_shot()`. |
 | Temperature far from expected at turbo | SCLK > 300 kHz corrupting single-shot. Lower SCLK. |
 | `RDATA` works but voltage is off | Wrong gain, or single-ended mux needs gain 1/2/4. |

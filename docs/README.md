@@ -24,8 +24,10 @@ cycle clears. This driver encodes the verified-good behaviour:
 
 1. **SPI mode 1 only** (CPOL=0, CPHA=1).
 2. **SCLK ≤ 300 kHz in turbo mode** (internal-oscillator start-up limit).
-3. **Rate changes via plain register write** (a config write restarts the
-   conversion, datasheet §8.4.2.2) — no reset between rates.
+3. **A reset before each rate change.** A config write restarts the
+   conversion (datasheet §8.4.2.2), but the part does not reliably
+   accept consecutive config writes — a dropped second WREG leaves the
+   ADC stuck at the previous rate. `set_config()` performs the reset.
 4. **Single-shot reads at high rate** (START → DRDY edge → RDATA) so the
    SCLK phase is constant and the 24-bit framing stays stable.
 5. **Hardware-timestamped DRDY rate meter** (immune to the aliasing and

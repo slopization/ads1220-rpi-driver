@@ -27,8 +27,11 @@ releases GPIO/SPI on exit.
 ### `set_config(sps, mode="normal", mux=0, gain=1, continuous=True, ts=False, bcs=False, pga_bypass=False) → int`
 
 The main config call. Writes REG0+REG1, sends START/SYNC. Returns the
-REG1 byte written. **No reset needed when changing rate** (a config write
-restarts the conversion).
+REG1 byte written. **A short reset precedes every configuration**: the
+part does not reliably accept consecutive config writes (a dropped WREG
+leaves the ADC stuck at the previous rate), so set_config() resets it
+first. One reset per change is safe — only repeated POWERDOWN+RESET
+storms desync the part.
 
 | Arg | Meaning |
 |-----|---------|

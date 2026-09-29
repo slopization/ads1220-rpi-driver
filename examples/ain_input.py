@@ -19,6 +19,8 @@ with ADS1220() as adc:
     adc.set_config(RATE, "normal", mux=0, gain=GAIN)  # AIN0-AIN1
     time.sleep(0.5)
     for i in range(10):
-        v = adc.read_voltage(gain=GAIN) * 1000
+        # sync each read to the DRDY falling edge; a blind RDATA can
+        # land mid-conversion and read 0xFF FF FF FF
+        raw = adc.single_shot(timeout_s=0.02)
+        v = adc.decode_24bit(raw) * 2.048 / GAIN / (1 << 23) * 1000
         print(f"sample {i}: {v:+.3f} mV")
-        time.sleep(1.0 / RATE)

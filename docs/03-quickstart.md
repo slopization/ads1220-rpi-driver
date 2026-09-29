@@ -58,7 +58,7 @@ Or the ready-made script: `python3 examples/turbo_2kps.py`.
 ```python
 with ADS1220(sclk_hz=300_000) as adc:
     adc.set_config(40, "turbo")      # DR index or SPS value
-    adc.set_config(660, "turbo")     # plain register write — safe
+    adc.set_config(660, "turbo")     # safe: set_config() resets the part first
     adc.set_sps(2000)                # or: keep mux/gain/ts, change rate
 ```
 
